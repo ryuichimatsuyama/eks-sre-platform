@@ -117,7 +117,7 @@ flowchart TB
     PROM -->|SLO / Burn Rate| ROLLOUTS
 
     PROM -->|SLO Alerts| ALERT
-    ALERT -->|sloth_severity=&quot;page&quot;| PD
+    ALERT -->|Page| PD
 ```
 
 ---
