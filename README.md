@@ -7,225 +7,117 @@ Google Online Boutiqueの[fork](https://github.com/ryuichimatsuyama/microservice
 
 ## Architecture
 
+### CI/CD & GitOps
 ```mermaid
 flowchart TB
 
-    %% =========================================================
-    %% External
-    %% =========================================================
+    APP_PR["Application PR<br/>Source Validation"]
+    CI["GitHub Actions<br/>Build / Test / Trivy / E2E"]
+    MAIN["GitHub<br/>main"]
+    BUILD["GitHub Actions<br/>Build / Push"]
+    GHCR["GHCR<br/>Container Images"]
+    RENOVATE["Renovate<br/>Artifact Promotion"]
+    RELEASE_PR["Renovate PR<br/>Artifact Validation"]
+
+    APPSET["ApplicationSet<br/>PR Environments"]
+    ARGO["Argo CD<br/>GitOps Controller"]
+
+    PREVIEW["PR Environment"]
+    STABLE["Stable Environment"]
+
+    APP_PR -->|Trigger| CI
+    CI -->|Required Checks| APP_PR
+    APP_PR -->|Merge| MAIN
+
+    MAIN --> BUILD
+    BUILD -->|Push Image| GHCR
+    GHCR --> RENOVATE
+    RENOVATE -->|Image Tag Update| RELEASE_PR
+    RELEASE_PR -->|Merge| MAIN
+
+    APP_PR -->|PR Desired State| APPSET
+    RELEASE_PR -->|Release Desired State| APPSET
+    APPSET -->|Generate| PREVIEW
+
+    MAIN -->|Stable Desired State| ARGO
+    ARGO -->|Reconcile| STABLE
+```
+
+### Infrastructure & Runtime
+```mermaid
+flowchart TB
 
     USER["Users"]
     CF["Cloudflare<br/>WAF / Rate Limiting"]
-    PD["PagerDuty<br/>Incident Management"]
 
-    USER -->|HTTPS| CF
-
-
-    %% =========================================================
-    %% CI/CD & Artifact Management
-    %% =========================================================
-
-    subgraph CICD["CI/CD & Artifact Management"]
-        direction TB
-
-        APP_PR["Application PR<br/>Source Validation"]
-
-        PR_CI["GitHub Actions<br/>
-        Build / Test / Trivy<br/>
-        PR Environment / E2E"]
-
-        MAIN["GitHub<br/>main"]
-
-        BUILD["GitHub Actions<br/>
-        Build / Push"]
-
-        GHCR["GHCR<br/>Container Images"]
-
-        RENOVATE["Renovate<br/>
-        Artifact Promotion"]
-
-        RENOVATE_PR["Renovate PR<br/>
-        Artifact Validation"]
-
-        APP_PR -->|Trigger| PR_CI
-        PR_CI -->|Required Checks| APP_PR
-        APP_PR -->|Merge| MAIN
-
-        MAIN -->|Trigger| BUILD
-        BUILD -->|Push Image| GHCR
-        GHCR --> RENOVATE
-        RENOVATE -->|Image Tag Update| RENOVATE_PR
-        RENOVATE_PR -->|Merge| MAIN
-    end
-
-
-    %% =========================================================
-    %% Infrastructure & Platform Configuration as Code
-    %% =========================================================
-
-    subgraph IAC["Infrastructure & Platform Configuration as Code"]
-        direction TB
-
+    subgraph IAC["Infrastructure as Code"]
         TF["Terraform"]
+        AWS_IAC["AWS<br/>VPC / EKS / IAM"]
+        PLATFORM["Platform Services<br/>GitHub / Cloudflare / PagerDuty"]
 
-        TF_AWS["AWS<br/>VPC / EKS / IAM"]
-
-        TF_PLATFORM["Platform Services<br/>
-        GitHub / Cloudflare / PagerDuty"]
-
-        TF --> TF_AWS
-        TF --> TF_PLATFORM
+        TF --> AWS_IAC
+        TF --> PLATFORM
     end
-
-
-    %% =========================================================
-    %% AWS
-    %% =========================================================
 
     subgraph AWS["AWS — ap-northeast-1"]
-        direction TB
-
         subgraph VPC["VPC — 10.0.0.0/16"]
-            direction TB
-
-            SUBNETS["Private Subnets<br/>
-            3 Availability Zones"]
+            SUBNETS["Private Subnets<br/>3 Availability Zones"]
 
             subgraph EKS["Amazon EKS"]
-                direction TB
+                ARGO["Argo CD"]
+                TUNNEL["cloudflared"]
+                ISTIO["Istio<br/>STRICT mTLS"]
+                ROLLOUTS["Argo Rollouts"]
+                APP["Online Boutique<br/>11 Microservices"]
 
-                ARGO["Argo CD<br/>GitOps Controller"]
-
-                APPSET["ApplicationSet<br/>
-                PR Environments"]
-
-                subgraph GITOPS["GitOps Managed Resources"]
-                    direction TB
-
-
-                    %% -----------------------------------------
-                    %% Application
-                    %% -----------------------------------------
-
-                    subgraph APPLICATION["Application"]
-                        direction TB
-
-                        APP["Online Boutique<br/>
-                        11 Microservices"]
-
-                        PREVIEW["PR Environments"]
-                    end
-
-
-                    %% -----------------------------------------
-                    %% Progressive Delivery & Service Mesh
-                    %% -----------------------------------------
-
-                    subgraph DELIVERY["Progressive Delivery & Service Mesh"]
-                        direction TB
-
-                        ROLLOUTS["Argo Rollouts<br/>
-                        Canary 20% → 50% → 100%"]
-
-                        ISTIO["Istio<br/>
-                        STRICT mTLS<br/>
-                        Canary Traffic Splitting"]
-                    end
-
-
-                    %% -----------------------------------------
-                    %% Observability
-                    %% -----------------------------------------
-
-                    subgraph OBS["Observability & Reliability"]
-                        direction TB
-
-                        PROM["Prometheus / Sloth<br/>
-                        SLI / SLO / Burn Rate"]
-
-                        GRAFANA["Grafana<br/>
-                        Metrics / Logs / Traces"]
-
-                        LOKI["Loki / Promtail<br/>Logs"]
-
-                        OTEL["OpenTelemetry<br/>Telemetry"]
-
-                        JAEGER["Jaeger<br/>Tracing"]
-
-                        ALERT["Alertmanager<br/>Alert Routing"]
-                    end
-
-
-                    %% -----------------------------------------
-                    %% External Connectivity
-                    %% -----------------------------------------
-
-                    TUNNEL["cloudflared<br/>
-                    Cloudflare Tunnel"]
-                end
+                ARGO --> APP
+                ROLLOUTS -->|Canary| APP
+                ISTIO -->|Traffic Split| APP
             end
         end
     end
 
+    TF --> AWS_IAC
+    AWS_IAC -.->|Provision| SUBNETS
+    AWS_IAC -.->|Bootstrap| ARGO
 
-    %% =========================================================
-    %% Infrastructure Provisioning
-    %% =========================================================
+    USER -->|HTTPS| CF
+    TUNNEL -->|Outbound Tunnel| CF
+    CF -.->|Request| TUNNEL
+    TUNNEL -->|Origin Traffic| APP
+```
 
-    TF_AWS -.->|Provision| SUBNETS
-    TF_AWS -.->|Bootstrap| ARGO
+### Observability & Reliability
+```mermaid
+flowchart TB
 
+    APP["Online Boutique<br/>11 Microservices"]
 
-    %% =========================================================
-    %% GitOps Desired State
-    %% =========================================================
+    PROM["Prometheus / Sloth<br/>SLI / SLO / Burn Rate"]
+    LOKI["Loki / Promtail<br/>Logs"]
+    OTEL["OpenTelemetry<br/>Telemetry"]
+    JAEGER["Jaeger<br/>Distributed Tracing"]
+    GRAFANA["Grafana<br/>Metrics / Logs / Traces"]
 
-    MAIN -->|Stable Desired State| ARGO
+    ALERT["Alertmanager<br/>Alert Routing"]
+    PD["PagerDuty<br/>Incident Management"]
 
-    APP_PR -->|PR Desired State| APPSET
-    RENOVATE_PR -->|Release Desired State| APPSET
-
-    APPSET -->|Generate PR Applications| PREVIEW
-
-    ARGO -->|Reconcile| GITOPS
-
-
-    %% =========================================================
-    %% Progressive Delivery
-    %% =========================================================
-
-    ROLLOUTS -->|Canary| APP
-    ISTIO -->|Traffic Split| APP
-
-    PROM -->|SLO / Burn Rate| ROLLOUTS
-
-
-    %% =========================================================
-    %% Observability
-    %% =========================================================
+    ROLLOUTS["Argo Rollouts<br/>Canary Analysis"]
 
     APP -->|Metrics| PROM
     APP -->|Logs| LOKI
     APP -->|Telemetry| OTEL
 
     PROM -->|Metrics| GRAFANA
-    PROM -->|Alerts| ALERT
-
     LOKI -->|Logs| GRAFANA
 
     OTEL -->|Traces| JAEGER
     JAEGER -->|Traces| GRAFANA
 
-    ALERT -->|Page| PD
+    PROM -->|SLO / Burn Rate| ROLLOUTS
 
-
-    %% =========================================================
-    %% External Traffic
-    %% =========================================================
-
-    TUNNEL -->|Outbound Tunnel| CF
-    CF -.->|Request| TUNNEL
-    TUNNEL -->|Origin Traffic| APP
+    PROM -->|SLO Alerts| ALERT
+    ALERT -->|sloth_severity=&quot;page&quot;| PD
 ```
 
 ---
