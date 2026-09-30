@@ -66,7 +66,7 @@ flowchart TB
             subgraph EKS["Amazon EKS"]
                 ARGO["Argo CD"]
                 TUNNEL["cloudflared"]
-                ISTIO["Istio<br/>STRICT mTLS"]
+                ISTIO["Istio"]
                 ROLLOUTS["Argo Rollouts"]
                 APP["Online Boutique<br/>11 Microservices"]
 
@@ -130,21 +130,20 @@ flowchart TB
 | **Terraform** | Infrastructure & Configuration as Code | AWS / GitHub / Cloudflare / PagerDutyをCodeとして管理し、Argo CDを初期Bootstrap |
 | **GitHub** | Source of Truth | Application Code / Kubernetes Desired State / Pull Requestを管理 |
 | **GitHub Actions** | CI / Change Validation | Build・Test・Trivy Scan・Manifest Validationを実行し、PR Environment上でHealth Check / E2Eを実施 |
-| **Docker Buildx Bake** | Container Build | Online Boutiqueの11 Microservicesを並列Build |
 | **GHCR** | Container Registry | PR ImageおよびRelease Imageを保存 |
 | **Renovate** | Artifact Promotion | 新しいRelease Imageを検出し、各Microserviceを同一Release Tagへ更新するPromotion PRを作成 |
-| **Argo CD** | GitOps | GitをSource of TruthとしてKubernetes Desired Stateを継続的にReconcile。Configuration Driftを検出・修正 |
-| **ApplicationSet** | PR Environments | Application PR / Renovate PRごとにPR環境を生成し、各PRのrevisionをデプロイ |
-| **Argo Rollouts** | Progressive Delivery | Canaryを`20% → 50% → 100%`で段階的にRelease。アラート発生時はRolloutをAbort。|
+| **Argo CD** | GitOps | GitをSource of TruthとしてKubernetes Desired Stateを継続的にReconcileし、Configuration Driftを検出・修正 |
+| **ApplicationSet** | PR Environments | Application PR / Renovate PRごとにPR Environmentを生成し、各PRのrevisionをデプロイ |
+| **Argo Rollouts** | Progressive Delivery | Canaryを`20% → 50% → 100%`で段階的にRelease。Prometheus MetricsをAnalysisRunで評価し、基準未達時にRolloutをAbort |
 | **Istio** | Service Mesh | カナリアリリースのトラフィック分割 / メトリクス収集 |
-| **Prometheus** | Metrics | Metricsを収集し、SLI / SLO / Error Budget / Burn Rateを評価 |
-| **Sloth** | SLO | Availability SLO `99.9%`を定義し、Alert Rulesを生成。|
-| **Grafana** | Visualization | Metrics・SLI / SLO・Error Budget・Burn RateをDashboardで可視化。|
-| **Loki / Promtail** | Logging | Logsを収集。|
-| **OpenTelemetry** | Telemetry | Telemetryを収集。 |
-| **Jaeger** | Distributed Tracing | Microservices間のRequest Flowを追跡し、Latency / Errorの発生箇所を調査。|
-| **Alertmanager** | Alert Routing | Slothが生成したSLOアラートのうち、`sloth_severity="page"` をPagerDutyへルーティング |
-| **PagerDuty** | Incident Management | `sloth_severity="page"` のSLOアラートをインシデント化し、オンコール担当者へ通知|
+| **Prometheus** | Metrics | Metricsを収集し、Slothが生成したRecording / Alert Rulesを評価 |
+| **Sloth** | SLO | Availability SLO `99.9%`を定義し、SLI / Error Budget / Multi-window Burn Rate用のPrometheus Rulesを生成 |
+| **Grafana** | Visualization | PrometheusのMetrics / SLO、LokiのLogs、JaegerのTracesをDashboardで可視化 |
+| **Loki / Promtail** | Logging | Kubernetes WorkloadのLogsを収集・保存 |
+| **OpenTelemetry** | Telemetry | Application Telemetryを収集し、TraceをJaegerへ転送 |
+| **Jaeger** | Distributed Tracing | Microservices間のRequest Flowを追跡し、Latency / Errorの発生箇所を調査 |
+| **Alertmanager** | Alert Routing | Slothが生成したSLOアラートのうち、`sloth_severity="page"`をPagerDutyへルーティング |
+| **PagerDuty** | Incident Management | `sloth_severity="page"`のSLOアラートをインシデント化し、オンコール担当者へ通知 |
 | **Trivy** | Security | CIでContainer Imageの脆弱性Scanを実行 |
 | **Cloudflare Tunnel** | External Access | EKS内の`cloudflared`からCloudflareへOutbound Tunnelを確立し、Applicationを公開 |
 | **Cloudflare WAF / Rate Limiting** | Edge Security | External RequestをEdgeで検査し、不正Requestや過剰Requestを制御 |
