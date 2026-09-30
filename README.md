@@ -41,7 +41,8 @@ flowchart TB
 
         GHCR["GHCR<br/>Container Images"]
 
-        RENOVATE["Renovate<br/>Artifact Promotion"]
+        RENOVATE["Renovate<br/>
+        Artifact Promotion"]
 
         RENOVATE_PR["Renovate PR<br/>
         Artifact Validation"]
@@ -52,7 +53,6 @@ flowchart TB
 
         MAIN -->|Trigger| BUILD
         BUILD -->|Push Image| GHCR
-
         GHCR --> RENOVATE
         RENOVATE -->|Image Tag Update| RENOVATE_PR
         RENOVATE_PR -->|Merge| MAIN
@@ -68,25 +68,13 @@ flowchart TB
 
         TF["Terraform"]
 
-        subgraph TF_TARGETS["Managed Infrastructure"]
-            direction LR
+        TF_AWS["AWS<br/>VPC / EKS / IAM"]
 
-            TF_AWS["AWS<br/>VPC / EKS / IAM"]
-
-            TF_GITHUB["GitHub<br/>
-            Apps / Branch Protection"]
-
-            TF_CF["Cloudflare<br/>
-            DNS / Tunnel / WAF"]
-
-            TF_PD["PagerDuty<br/>
-            Services / Policies"]
-        end
+        TF_PLATFORM["Platform Services<br/>
+        GitHub / Cloudflare / PagerDuty"]
 
         TF --> TF_AWS
-        TF --> TF_GITHUB
-        TF --> TF_CF
-        TF --> TF_PD
+        TF --> TF_PLATFORM
     end
 
 
@@ -100,14 +88,8 @@ flowchart TB
         subgraph VPC["VPC — 10.0.0.0/16"]
             direction TB
 
-            subgraph SUBNETS["Private Subnets — 3 Availability Zones"]
-                direction LR
-
-                AZ1["AZ 1<br/>10.0.0.0/20"]
-                AZ2["AZ 2<br/>10.0.16.0/20"]
-                AZ3["AZ 3<br/>10.0.32.0/20"]
-            end
-
+            SUBNETS["Private Subnets<br/>
+            3 Availability Zones"]
 
             subgraph EKS["Amazon EKS"]
                 direction TB
@@ -122,39 +104,28 @@ flowchart TB
 
 
                     %% -----------------------------------------
-                    %% Application & Progressive Delivery
+                    %% Application
                     %% -----------------------------------------
 
-                    subgraph APP_DELIVERY["Application & Progressive Delivery"]
-                        direction LR
+                    subgraph APPLICATION["Application"]
+                        direction TB
 
-                        subgraph APPLICATION["Application"]
-                            direction TB
+                        APP["Online Boutique<br/>
+                        11 Microservices"]
 
-                            APP["Online Boutique<br/>
-                            11 Microservices"]
-
-                            PREVIEW["PR Environments"]
-                        end
-
-                        subgraph DELIVERY["Progressive Delivery"]
-                            direction TB
-
-                            ROLLOUTS["Argo Rollouts<br/>
-                            Canary 20% → 50% → 100%"]
-                        end
+                        PREVIEW["PR Environments"]
                     end
 
 
                     %% -----------------------------------------
-                    %% Networking & Service Mesh
+                    %% Progressive Delivery & Service Mesh
                     %% -----------------------------------------
 
-                    subgraph NETWORKING["Networking & Service Mesh"]
-                        direction LR
+                    subgraph DELIVERY["Progressive Delivery & Service Mesh"]
+                        direction TB
 
-                        TUNNEL["cloudflared<br/>
-                        Cloudflare Tunnel"]
+                        ROLLOUTS["Argo Rollouts<br/>
+                        Canary 20% → 50% → 100%"]
 
                         ISTIO["Istio<br/>
                         STRICT mTLS<br/>
@@ -170,28 +141,27 @@ flowchart TB
                         direction TB
 
                         PROM["Prometheus / Sloth<br/>
-                        Metrics / SLI / SLO<br/>
-                        Error Budget / Burn Rate"]
+                        SLI / SLO / Burn Rate"]
 
-                        subgraph OBS_TOOLS["Telemetry & Visualization"]
-                            direction LR
+                        GRAFANA["Grafana<br/>
+                        Metrics / Logs / Traces"]
 
-                            GRAFANA["Grafana<br/>
-                            Dashboards"]
+                        LOKI["Loki / Promtail<br/>Logs"]
 
-                            LOKI["Loki / Promtail<br/>
-                            Logs"]
+                        OTEL["OpenTelemetry<br/>Telemetry"]
 
-                            OTEL["OpenTelemetry<br/>
-                            Telemetry"]
+                        JAEGER["Jaeger<br/>Tracing"]
 
-                            JAEGER["Jaeger<br/>
-                            Distributed Tracing"]
-
-                            ALERT["Alertmanager<br/>
-                            Alert Routing"]
-                        end
+                        ALERT["Alertmanager<br/>Alert Routing"]
                     end
+
+
+                    %% -----------------------------------------
+                    %% External Connectivity
+                    %% -----------------------------------------
+
+                    TUNNEL["cloudflared<br/>
+                    Cloudflare Tunnel"]
                 end
             end
         end
@@ -199,20 +169,11 @@ flowchart TB
 
 
     %% =========================================================
-    %% Layout Guidance
+    %% Infrastructure Provisioning
     %% =========================================================
 
-    BUILD ~~~ TF
-    TF_AWS ~~~ AZ2
-    AZ2 ~~~ ARGO
-
-
-    %% =========================================================
-    %% Terraform -> Infrastructure
-    %% =========================================================
-
-    TF_AWS -.->|Provision| AZ2
-    TF_AWS -.->|Bootstrap Argo CD| ARGO
+    TF_AWS -.->|Provision| SUBNETS
+    TF_AWS -.->|Bootstrap| ARGO
 
 
     %% =========================================================
@@ -234,6 +195,7 @@ flowchart TB
     %% =========================================================
 
     ROLLOUTS -->|Canary| APP
+    ISTIO -->|Traffic Split| APP
 
     PROM -->|SLO / Burn Rate| ROLLOUTS
 
@@ -262,7 +224,7 @@ flowchart TB
     %% =========================================================
 
     TUNNEL -->|Outbound Tunnel| CF
-    CF -.->|Request through Tunnel| TUNNEL
+    CF -.->|Request| TUNNEL
     TUNNEL -->|Origin Traffic| APP
 ```
 
